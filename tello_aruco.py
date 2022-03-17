@@ -21,7 +21,7 @@ new_camera_matrix = calibrationParams.getNode("newCameraMatrix").mat()
 
 
 #might need to be adjusted when used w real arucos
-markerLength = 0.25 # Here, our measurement unit is centimetre.
+markerLength = 0.23 # Here, our measurement unit is centimetre.
 arucoParams = cv2.aruco.DetectorParameters_create()
 
 hover = 1
@@ -90,7 +90,7 @@ class FrontEnd(object):
 		self.up_down_velocity = 0
 		self.yaw_velocity = 0
 		self.speed = 10
-
+		self.tello.send_command_with_return("downvision 0")
 		self.send_rc_control = False
 
 		# create update timer

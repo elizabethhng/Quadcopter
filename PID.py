@@ -10,8 +10,8 @@ import matplotlib.pyplot as plt
 
 #todo: readme for project
 
-FPS = 100	# 1/FPS seconds = time program pauses between frames
-markerLength = 10 # 2 cm = phone; 10 cm = printout
+FPS = 25	# 1/FPS seconds = time program pauses between frames
+markerLength = 9.4 # 2 cm = phone; 10 cm = printout
 
 
 #aruco dictionary
@@ -38,7 +38,7 @@ def cameraPoseFromHomography(H):
 
 	norm1 = np.linalg.norm(H1)
 	norm2 = np.linalg.norm(H2)
-	tnorm = (norm1 + norm2) / 2.0;
+	tnorm = (norm1 + norm2) / 2.0
 
 	T = H[:, 2] / tnorm
 	return np.mat([H1, H2, H3, T])
@@ -75,10 +75,19 @@ class FrontEnd(object):
 
 		# Creat pygame window
 		pygame.display.set_caption("Tello video stream")
-		self.screen = pygame.display.set_mode([960, 720]) # ((width, height) of window))
+		self.screen = pygame.display.set_mode([400, 300]) # ((width, height) of window))
 
 		# Init Tello object that interacts with the Tello drone
 		self.tello = Tello()
+		self.tello.connect()
+
+		# Check if battery level stable
+		batt=self.tello.get_battery()
+		if int(batt)<20: 
+			print (" no battery", batt)
+			sys.exit(0)
+		print(batt)
+		# self.tello.get_frame_read()
 
 		# Drone velocities between -100~100
 		self.for_back_velocity = 0
@@ -90,7 +99,7 @@ class FrontEnd(object):
 		self.send_rc_control = False
 
 		# create update timer
-		pygame.time.set_timer(USEREVENT + 1, 50)
+		pygame.time.set_timer(USEREVENT + 1, 100)
 
 
 
@@ -107,13 +116,13 @@ class FrontEnd(object):
 		if not self.tello.streamon():
 			print("Could not start video stream")
 			return
-
+		self.tello.send_command_with_return("downvision 1")
 		kp_xyz = [.15,.5,.4]	#proportional constants
 		ki_xyz = [0,0,0]		#integral constants
 		kd_xyz = [.05,.1,.1]	#derivative constants
 
-		desired_xyz = [0,0,30]	#desired xyz distance from aruco
-		land_xyz = [100,100,100] 		#range needed within desired to cut motors + attempt landing
+		desired_xyz = [0,0,20]	#desired xyz distance from aruco
+		land_xyz = [5,5,60] 		#range needed within desired to cut motors + attempt landing
 
 		bias_xyz = [0,0,0]
 		integral_xyz = [0,0,0]
@@ -123,10 +132,8 @@ class FrontEnd(object):
 		plt.ion() #interactive mode on
 		t = 0;	#time (used for plotting)
 		plt.pause(0.001)
-		t = t + 0.001;
-
-
-
+		t = t + 0.001
+		land_count= 0
 
 		frame_read = self.tello.get_frame_read()
 
@@ -134,12 +141,14 @@ class FrontEnd(object):
 		while not should_stop:
 
 			for event in pygame.event.get():
-				if event.type == USEREVENT + 1:
-					self.update()
-				elif event.type == QUIT:
+				# if event.type == USEREVENT + 1:
+				# 	self.update()
+				if event.type == QUIT:
 					should_stop = True
 				elif event.type == KEYDOWN:
 					if event.key == K_ESCAPE:
+						self.tello.streamoff()
+						self.tello.end()
 						should_stop = True
 					else:
 						self.keydown(event.key)
@@ -152,7 +161,8 @@ class FrontEnd(object):
 
 			self.screen.fill([0, 0, 0])
 
-			img = frame_read.frame
+			frame = frame_read.frame
+			img = cv2.rotate(frame,cv2.ROTATE_90_CLOCKWISE)
 			gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 			size = img.shape
 
@@ -197,15 +207,16 @@ class FrontEnd(object):
 				plt.subplot(311)
 				plt.plot(t, xyz[0], 'rs')
 				plt.subplot(312)
-				plt.plot(t, xyz[1], 'gs');
+				plt.plot(t, xyz[1], 'gs')
 				plt.subplot(313)
-				plt.plot(t, xyz[2], 'bs');
+				plt.plot(t, xyz[2], 'bs')
 
-				iteration_time = 1/FPS;
+				iteration_time = 1/FPS
 
 				error_xyz = []
 				derivative_xyz = []
 				output_xyz = []
+				final_output_xyz=[0,0,0]
 				for i in range(3):
 					error_xyz.append(desired_xyz[i] - xyz[i])
 					integral_xyz[i] = integral_xyz[i] + (error_xyz[i] * iteration_time)
@@ -214,34 +225,59 @@ class FrontEnd(object):
 					prev_error_xyz[i] = error_xyz[i]
 
 					#speed can only be 10-100, if outside of range, set to 10 or 100
-					if output_xyz[i] > 100:
-						output_xyz[i] = 100;
-					elif output_xyz[i] < -100:
-						output_xyz[i] = -100
-					elif output_xyz[i]<10 and output_xyz[i]>0:
-						output_xyz[i] = 10;
-					elif output_xyz[i]>-10 and output_xyz[i]<0:
-						output_xyz[i] = -10;
+					print(output_xyz)
+					if output_xyz[i] > 10:
+						output_xyz[i] = 10
+					elif output_xyz[i] < -10:
+						output_xyz[i] = -10
+					# if xyz[i] <-5 :
+					# 	final_output_xyz[i] = 10
+					# elif xyz[i] > 5:
+					# 	final_output_xyz[i] = -10
 
 
-				self.left_right_velocity = int(-output_xyz[0]);
-				self.yaw_velocity = int(-output_xyz[0]);
+				self.for_back_velocity = int(-output_xyz[1])
+				# if output_xyz[1]>10 or output_xyz[1]<-10:
+				# 	self.yaw_velocity = int(output_xyz[1])
 
-				self.up_down_velocity = int(output_xyz[1]);
-				self.for_back_velocity = int(-output_xyz[2]);
+				# self.up_down_velocity = int(final_output_xyz[2])
+				self.left_right_velocity = int(output_xyz[0])
+				# print('leftright',self.left_right_velocity,'farback', self.for_back_velocity, self.up_down_velocity,self.yaw_velocity)
+				# if xyz[0] < desired_xyz[0] + land_xyz[0] and xyz[0] > desired_xyz[0] - land_xyz[0] and xyz[1] < desired_xyz[1] + land_xyz[1] and xyz[1] >desired_xyz[1] - land_xyz[1] and xyz[2] < desired_xyz[2] + land_xyz[2] and xyz[2] > desired_xyz[2] - land_xyz[2]:
+				if xyz[0] < desired_xyz[0] + land_xyz[0] and xyz[0] > desired_xyz[0] - land_xyz[0] and xyz[1] < desired_xyz[1] + land_xyz[1] and xyz[1] >desired_xyz[1] - land_xyz[1]:
+					
+					# self.left_right_velocity, self.for_back_velocity = -self.left_right_velocity, -self.for_back_velocity
+					# self.update()
+					self.left_right_velocity, self.for_back_velocity = 0,0
+					# self.tello.send_command_with_return("stop")
+					self.update()
+					# time.sleep(1)
+					print("adjusting z axis")
+					self.left_right_velocity, self.for_back_velocity, self.up_down_velocity = 0,0,10
+					self.update()
+					if xyz[2] < 30:
+						self.up_down_velocity = 0
+						land_count+=1
+						print("within range, ",land_count)
+						if land_count > 5:
+							# self.tello.move_down(50)
+							print('land now!!!')
+							self.tello.land()
+							self.send_rc_control = False
+							self.tello.end()
+							# cv2.destroyAllWindows()
+				else:
+					land_count=0
+				
+				print("off_x: ", xyz[0], self.left_right_velocity,"off_y:", xyz[1], self.for_back_velocity, "off_z:",xyz[2],sep="\t")
 
-				if xyz[0] < desired_xyz[0] + land_xyz[0] and xyz[0] > desired_xyz[0] - land_xyz[0] and xyz[1] < desired_xyz[1] + land_xyz[1] and xyz[1] > xyz[1] - land_xyz[1] and xyz[2] < desired_xyz[2] + land_xyz[2] and xyz[2] > desired_xyz[2] - land_xyz[2]:
-					self.tello.land()
-					self.send_rc_control = False
-
-
-
-				print("x: ",xyz[0],"y:",xyz[1],"z:",xyz[2],sep="\t")
 
 				#consider using gain scheduling (different constants at different distances)
+			else:
+				self.left_right_velocity, self.for_back_velocity, self.up_down_velocity,self.yaw_velocity = 0,0,0,0
+			
 
-
-
+			self.update()
 
 			img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 			frame = np.rot90(img)
@@ -252,9 +288,9 @@ class FrontEnd(object):
 			pygame.display.update()
 
 			#xyz graphing
-			plt.show()
+			# plt.show()
 			plt.pause(1 / FPS)
-			t = t + 1/FPS;
+			t = t + 1/FPS
 
 		#deallocate resources.
 		self.tello.end()
@@ -276,6 +312,7 @@ class FrontEnd(object):
 
 		if key == pygame.K_t:  # takeoff
 			self.tello.takeoff()
+			self.tello.move_up(30)
 			self.send_rc_control = True
 		elif key == pygame.K_l:  # land
 			self.tello.land()
@@ -283,13 +320,26 @@ class FrontEnd(object):
 		elif key == pygame.K_e:		#release E to turn off all motors (for our automated landing)
 			self.tello.emergency()
 			self.send_rc_control = False
+			
+		elif key == pygame.K_z:		#release E to turn off all motors (for our automated landing)
+			self.tello.send_command_with_return('downvision 0')
+			frame_read = self.tello.get_frame_read()
+			self.send_rc_control = True
+
+		elif key == pygame.K_x:		#release E to turn off all motors (for our automated landing)
+			self.tello.send_command_with_return('downvision 1')
+			frame_read = self.tello.get_frame_read()
+			self.send_rc_control = True
 
 	def update(self):
 		""" Update routine. Send velocities to Tello."""
 		if self.send_rc_control:
+			# if update_count == 1:
 			self.tello.send_rc_control(self.left_right_velocity, self.for_back_velocity, self.up_down_velocity,
-									   self.yaw_velocity)
-
+									self.yaw_velocity)
+				# update_count = 0
+			# else:
+				# update_count=1
 
 def main():
 	frontend = FrontEnd()
