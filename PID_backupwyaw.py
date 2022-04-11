@@ -181,13 +181,11 @@ class FrontEnd(object):
 		ki_xyz = [0,0.05,0]		#integral constants
 		kd_xyz = [.05,.1,.1]	#derivative constants
 
-			#desired xyz distance from aruco
+		desired_xyz = [0,0,40]	#desired xyz distance from aruco
 		if self.land==True:
-			desired_xyz = [0,5,30]
 			land_xyz = [10,10,20] 		#range needed within desired to cut motors + attempt landing
 		else:
-			desired_xyz = [0,5,60]
-			land_xyz = [10,5,10]
+			land_xyz = [5,5,20]
 
 		bias_xyz = [0,0,0]
 		integral_xyz = [0,0,0]
@@ -267,7 +265,7 @@ class FrontEnd(object):
 				R_ct    = np.matrix(cv2.Rodrigues(rvec)[0])
 				R_tc    = R_ct.T
 				roll_marker, pitch_marker, yaw_marker = rotationMatrixToEulerAngles(R_flip*R_tc)
-				yaw_off = int(math.degrees(yaw_marker))
+				roff = int(math.degrees(yaw_marker))
 				#PID controller
 
 				xyz = []
@@ -299,7 +297,7 @@ class FrontEnd(object):
 					if output_xyz[i] > 10:
 						output_xyz[i] = 7
 					elif output_xyz[i] < -10:
-						output_xyz[i] = -7
+						output_xyz[i] = -10
 					elif output_xyz[i] > 0 and output_xyz[i] < 5 :
 						output_xyz[i] = 5
 					elif output_xyz[i] < 0 and output_xyz[i] > -5 :
@@ -316,23 +314,21 @@ class FrontEnd(object):
 				prev_error_xyz[2] = error_xyz[2]			
 				if output_xyz[2] < -15:
 					output_xyz[2]=-20	
-				elif output_xyz[2] > 15:
-					output_xyz[2]=15	
 
-				if yaw_off > 0:
-					yaw_off = 15
-				elif yaw_off < 0:
-					yaw_off = -15
+				if roff > 0:
+					roff = 15
+				elif roff < 0:
+					roff = -15
 
 				self.for_back_velocity = int(output_xyz[1])
 				# if output_xyz[1]>10 or output_xyz[1]<-10:
-				self.yaw_velocity = int(-yaw_off)
+				self.yaw_velocity = int(-roff)
 
 				# self.up_down_velocity = int(final_output_xyz[2])
 				self.left_right_velocity = int(-output_xyz[0])
 				# print('leftright',self.left_right_velocity,'farback', self.for_back_velocity, self.up_down_velocity,self.yaw_velocity)
 				# if xyz[0] < desired_xyz[0] + land_xyz[0] and xyz[0] > desired_xyz[0] - land_xyz[0] and xyz[1] < desired_xyz[1] + land_xyz[1] and xyz[1] >desired_xyz[1] - land_xyz[1] and xyz[2] < desired_xyz[2] + land_xyz[2] and xyz[2] > desired_xyz[2] - land_xyz[2]:
-				if xyz[0] < desired_xyz[0] + land_xyz[0] and xyz[0] > desired_xyz[0] - land_xyz[0] and xyz[1] < desired_xyz[1] + land_xyz[1] and xyz[1] >desired_xyz[1] - land_xyz[1] and yaw_off>-5 and yaw_off<5:
+				if xyz[0] < desired_xyz[0] + land_xyz[0] and xyz[0] > desired_xyz[0] - land_xyz[0] and xyz[1] < desired_xyz[1] + land_xyz[1] and xyz[1] >desired_xyz[1] - land_xyz[1] and roff>-5 and roff<5:
 					
 					# self.left_right_velocity, self.for_back_velocity = -self.left_right_velocity, -self.for_back_velocity
 					# self.update()
@@ -362,7 +358,7 @@ class FrontEnd(object):
 							# cv2.destroyAllWindows()
 
 					elif self.land == False:
-						if xyz[2] < 70 :
+						if xyz[2] < 150 :
 							self.up_down_velocity = 0
 							land_count+=1
 							print("within range, ready to fly ",land_count)
@@ -424,8 +420,6 @@ class FrontEnd(object):
 		elif key == pygame.K_l:  # land
 			self.tello.land()
 			self.send_rc_control = True
-			pygame.display.quit()
-			pygame.quit()
 			return
 		elif key == pygame.K_e:		#release E to turn off all motors (for our automated landing)
 			self.tello.emergency()
